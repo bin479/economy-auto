@@ -1,8 +1,8 @@
-name: 자동 뉴스 요약 및 스레드 생성
+name: 자동 뉴스 요약
 
 on:
   schedule:
-    - cron: '18 6 * * *'  # 한국시간 오전 9시
+    - cron: '25 6 * * *'  # 한국시간 15:18
   workflow_dispatch:
 
 jobs:
