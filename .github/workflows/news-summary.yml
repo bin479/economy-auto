@@ -31,9 +31,12 @@ jobs:
 
       # ✅ 자동 비활성화 방지를 위한 keep-alive 커밋
       - name: Keep repository active
-        if: ${{ github.run_number != 0 && github.run_number != null && github.run_number | mod(30) == 0 }}
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git commit --allow-empty -m "keep workflow alive $(date)"
-          git push
+          if [ $((GITHUB_RUN_NUMBER % 30)) -eq 0 ]; then
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git commit --allow-empty -m "keep workflow alive $(date)"
+            git push
+          fi
