@@ -2,7 +2,7 @@ name: 자동 뉴스 요약
 
 on:
   schedule:
-    - cron: '25 6 * * *'  # 한국시간 15:18
+    - cron: '5 15 * * *'  # 한국시간 15:18
   workflow_dispatch:
 
 jobs:
