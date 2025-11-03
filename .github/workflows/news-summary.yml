@@ -2,7 +2,7 @@ name: 자동 뉴스 요약
 
 on:
   schedule:
-    - cron: '5 15 * * *'  # 한국시간 15:18
+    - cron: '25 6 * * *'  # 한국시간 15:18
   workflow_dispatch:
 
 jobs:
@@ -28,4 +28,13 @@ jobs:
         GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
       run: |
         python news_summarizer.py
+
+    # ✅ 자동 비활성화 방지를 위한 keep-alive 커밋
+    - name: Keep repository active
+      if: ${{ github.run_number % 30 == 0 }}  # 약 30일에 한 번씩 실행
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        git commit --allow-empty -m "keep workflow alive $(date)"
+        git push
 
