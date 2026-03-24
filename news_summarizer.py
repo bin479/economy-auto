@@ -1,4 +1,4 @@
-import time, random, requests, datetime, json, os
+import time, requests, datetime, json, os
 from bs4 import BeautifulSoup
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -15,19 +15,24 @@ def authorize_google_sheets():
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 
-def call_gemini_with_retry(prompt, max_retries=3, delay=60):
+def call_gemini_with_retry(prompt, max_retries=5, delay=15):
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
     for attempt in range(max_retries):
         res = requests.post(GEMINI_URL, headers=headers, data=json.dumps(data))
         if res.status_code == 429:
-            print(f"⚠️ 429 오류, 재시도 중 ({attempt+1})... {delay}초 대기")
-            time.sleep(delay)
+            wait = delay * (attempt + 1)
+            print(f"⚠️ 429 오류, 재시도 중 ({attempt+1}/{max_retries})... {wait}초 대기")
+            time.sleep(wait)
         elif res.status_code == 200:
-            return res.json()
+            result = res.json()
+            if "candidates" not in result:
+                print(f"⚠️ candidates 없음, 응답: {result}")
+                return {"error": "no candidates"}
+            return result
         else:
             print(f"❌ API 오류: {res.status_code} - {res.text}")
-            return {"error": res.text}
+            time.sleep(5)
     return {"error": "재시도 초과"}
 
 # ✅ 기사 링크 수집
@@ -59,6 +64,7 @@ def summarize_with_gemini_flash(title, content):
     res = call_gemini_with_retry(prompt)
     if "candidates" in res:
         return res['candidates'][0]['content']['parts'][0]['text'].strip()
+    print(f"⚠️ 요약 실패 이유: {res.get('error', '알 수 없음')}")
     return "요약 실패"
 
 # ✅ 시트 탭 가져오기 또는 생성
@@ -69,24 +75,20 @@ def get_or_create_sheet_tab(spreadsheet, sheet_name):
     except gspread.exceptions.WorksheetNotFound:
         print(f"🆕 시트 생성: {sheet_name}")
         worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="10")
-        worksheet.append_row(["날짜", "제목", "요약", "스레드"])  # 헤더
+        worksheet.append_row(["날짜", "제목", "요약", "스레드"])
     return worksheet
-
-# ✅ 시트에 저장
-def save_to_sheet(worksheet, today, title, summary):
-    worksheet.append_row([today, title, summary, ""])
 
 # ✅ 요약 실행
 def summarize_articles():
     links = get_all_page_links()
     today = datetime.datetime.now().strftime('%Y-%m-%d')
 
-    # 'n2' 문서 열기 및 날짜 시트 준비
     gc = authorize_google_sheets()
     spreadsheet = gc.open("n2")
     worksheet = get_or_create_sheet_tab(spreadsheet, today)
 
     existing_titles = [row[1] for row in worksheet.get_all_values()[1:] if len(row) > 1]
+    new_rows = []
 
     for i, link in enumerate(links):
         try:
@@ -96,11 +98,15 @@ def summarize_articles():
                 print(f"⏭️ 이미 저장된 기사: {title}")
                 continue
             summary = summarize_with_gemini_flash(title, content)
-            save_to_sheet(worksheet, today, title, summary)
-            print("✅ 저장 완료:", title)
+            new_rows.append([today, title, summary, ""])
+            print("✅ 요약 완료:", title)
         except Exception as e:
             print(f"❌ 요약 중 오류 발생: {e}")
             continue
+
+    if new_rows:
+        worksheet.append_rows(new_rows)
+        print(f"📊 {len(new_rows)}개 기사 시트 저장 완료")
 
 # ✅ 스레드 생성
 def generate_threads():
@@ -110,6 +116,8 @@ def generate_threads():
     worksheet = get_or_create_sheet_tab(spreadsheet, today)
 
     data = worksheet.get_all_values()
+    updates = []
+
     for row_idx in range(1, len(data)):
         row = data[row_idx]
         if len(row) < 3:
@@ -129,15 +137,20 @@ def generate_threads():
         try:
             response = call_gemini_with_retry(prompt)
             result = response['candidates'][0]['content']['parts'][0]['text'].strip()
-            worksheet.update_cell(row_idx + 1, 4, result)
+            updates.append({
+                "range": f"D{row_idx + 1}",
+                "values": [[result]]
+            })
             print(f"✅ 스레드 생성 완료: {title}")
         except Exception as e:
             print(f"⚠️ 스레드 생성 실패 (Row {row_idx+1}): {e}")
             continue
 
+    if updates:
+        worksheet.batch_update(updates)
+        print(f"📊 {len(updates)}개 스레드 시트 저장 완료")
+
 # ✅ 실행
 if __name__ == "__main__":
     summarize_articles()
     generate_threads()
-
-
