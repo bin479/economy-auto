@@ -5,6 +5,21 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from concurrent.futures import ThreadPoolExecutor
 
+def run_fast_process(target_date):
+    formatted_date = target_date.replace("-", "")
+    list_url = f'https://media.naver.com/press/015/newspaper?date={formatted_date}'
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+    
+    res = requests.get(list_url, headers=headers)
+    
+    # ✅ 디버깅: 실제 응답 확인
+    print(f"📡 응답 코드: {res.status_code}")
+    print(f"📄 HTML 길이: {len(res.text)} 글자")
+    print(f"🔍 '/article/015/' 포함 여부: {'/article/015/' in res.text}")
+    print(f"🔍 '/mnews/article/015/' 포함 여부: {'/mnews/article/015/' in res.text}")
+    print("--- HTML 앞부분 500자 ---")
+    print(res.text[:500])
+
 # ✅ Google 인증
 def authorize_google_sheets():
     try:
