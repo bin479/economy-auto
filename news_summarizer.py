@@ -1,4 +1,5 @@
 import time, requests, datetime, json, os
+from datetime import timedelta  # ### 추가: 날짜 계산을 위해 필요
 from bs4 import BeautifulSoup
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -35,9 +36,12 @@ def call_gemini_with_retry(prompt, max_retries=5, delay=15):
             time.sleep(5)
     return {"error": "재시도 초과"}
 
-# ✅ 기사 링크 수집
-def get_all_page_links():
-    url = 'https://media.naver.com/press/015/newspaper'
+# ✅ 기사 링크 수집 (날짜 파라미터 추가)
+def get_all_page_links(date_str_short):
+    ### 수정: 특정 날짜(YYYYMMDD)의 신문면 URL로 접속
+    url = f'https://media.naver.com/press/015/newspaper?date={date_str_short}'
+    print(f"🌐 접속 URL: {url}")
+    
     res = requests.get(url)
     soup = BeautifulSoup(res.text, 'html.parser')
     links = []
@@ -46,7 +50,10 @@ def get_all_page_links():
         if href and '/article/' in href and '/015/' in href:
             full_url = 'https://n.news.naver.com' + href if href.startswith('/article/') else href
             links.append(full_url)
-    return list(dict.fromkeys(links))[:100]
+    
+    unique_links = list(dict.fromkeys(links))
+    print(f"📑 수집된 기사 개수: {len(unique_links)}")
+    return unique_links[:100]
 
 # ✅ 기사 본문 추출
 def extract_article_info(url):
@@ -79,13 +86,12 @@ def get_or_create_sheet_tab(spreadsheet, sheet_name):
     return worksheet
 
 # ✅ 요약 실행
-def summarize_articles():
-    links = get_all_page_links()
-    today = datetime.datetime.now().strftime('%Y-%m-%d')
-
+def summarize_articles(target_date, date_str_short):
+    links = get_all_page_links(date_str_short) # ### 수정: 날짜 인자 전달
+    
     gc = authorize_google_sheets()
     spreadsheet = gc.open("n2")
-    worksheet = get_or_create_sheet_tab(spreadsheet, today)
+    worksheet = get_or_create_sheet_tab(spreadsheet, target_date)
 
     existing_titles = [row[1] for row in worksheet.get_all_values()[1:] if len(row) > 1]
     new_rows = []
@@ -98,7 +104,7 @@ def summarize_articles():
                 print(f"⏭️ 이미 저장된 기사: {title}")
                 continue
             summary = summarize_with_gemini_flash(title, content)
-            new_rows.append([today, title, summary, ""])
+            new_rows.append([target_date, title, summary, ""])
             print("✅ 요약 완료:", title)
         except Exception as e:
             print(f"❌ 요약 중 오류 발생: {e}")
@@ -109,11 +115,10 @@ def summarize_articles():
         print(f"📊 {len(new_rows)}개 기사 시트 저장 완료")
 
 # ✅ 스레드 생성
-def generate_threads():
-    today = datetime.datetime.now().strftime('%Y-%m-%d')
+def generate_threads(target_date):
     gc = authorize_google_sheets()
     spreadsheet = gc.open("n2")
-    worksheet = get_or_create_sheet_tab(spreadsheet, today)
+    worksheet = get_or_create_sheet_tab(spreadsheet, target_date)
 
     data = worksheet.get_all_values()
     updates = []
@@ -125,7 +130,7 @@ def generate_threads():
         title, summary = row[1], row[2]
         thread = row[3] if len(row) > 3 else ""
 
-        if not title.strip() or thread.strip():
+        if not title.strip() or (len(thread.strip()) > 0 and thread != "스레드"):
             continue
 
         prompt = f"""
@@ -138,19 +143,3 @@ def generate_threads():
             response = call_gemini_with_retry(prompt)
             result = response['candidates'][0]['content']['parts'][0]['text'].strip()
             updates.append({
-                "range": f"D{row_idx + 1}",
-                "values": [[result]]
-            })
-            print(f"✅ 스레드 생성 완료: {title}")
-        except Exception as e:
-            print(f"⚠️ 스레드 생성 실패 (Row {row_idx+1}): {e}")
-            continue
-
-    if updates:
-        worksheet.batch_update(updates)
-        print(f"📊 {len(updates)}개 스레드 시트 저장 완료")
-
-# ✅ 실행
-if __name__ == "__main__":
-    summarize_articles()
-    generate_threads()
