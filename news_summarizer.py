@@ -81,7 +81,7 @@ def get_or_create_sheet_tab(spreadsheet, sheet_name):
 # ✅ 요약 실행
 def summarize_articles():
     links = get_all_page_links()
-    today = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
 
     gc = authorize_google_sheets()
     spreadsheet = gc.open("n2")
