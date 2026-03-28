@@ -4,6 +4,8 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from concurrent.futures import ThreadPoolExecutor
 
+print("✅ 라이브러리 로드 완료")
+
 def authorize_google_sheets():
     google_creds = os.getenv("GOOGLE_CREDENTIALS")
     creds_dict = json.loads(google_creds)
@@ -34,9 +36,11 @@ def call_gemini_with_retry(prompt, max_retries=5, delay=15):
     return {"error": "재시도 초과"}
 
 def get_all_page_links():
+    print("🔍 링크 수집 시작...")
     url = 'https://media.naver.com/press/015/'
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
     res = requests.get(url, headers=headers)
+    print(f"📡 응답 코드: {res.status_code}")
     soup = BeautifulSoup(res.text, 'html.parser')
 
     links = []
@@ -107,18 +111,21 @@ def summarize_and_thread(title, content):
 def run():
     start = time.time()
     today = datetime.datetime.now().strftime('%Y-%m-%d')
+    print(f"✅ run() 시작 - 오늘 날짜: {today}")
 
     links = get_all_page_links()
     if not links:
         print("❌ 링크 없음. 종료.")
         return
 
+    print("✅ 구글 시트 연결 시도...")
     gc = authorize_google_sheets()
+    print("✅ 구글 시트 연결 완료")
     spreadsheet = gc.open("n2")
     worksheet = get_or_create_sheet_tab(spreadsheet, today)
     existing_titles = {row[1] for row in worksheet.get_all_values()[1:] if len(row) > 1}
+    print(f"✅ 기존 저장된 기사 수: {len(existing_titles)}개")
 
-    # 크롤링 병렬 처리
     print(f"🌐 기사 크롤링 중... (병렬 20개)")
     articles = []
     with ThreadPoolExecutor(max_workers=20) as executor:
@@ -128,7 +135,6 @@ def run():
 
     print(f"📰 새 기사 {len(articles)}개 / Gemini 요약+스레드 시작...")
 
-    # Gemini 순차 처리
     new_rows = []
     for i, (title, content) in enumerate(articles):
         print(f"🤖 ({i+1}/{len(articles)}) {title[:30]}...")
@@ -138,6 +144,8 @@ def run():
     if new_rows:
         worksheet.append_rows(new_rows)
         print(f"📊 {len(new_rows)}개 시트 저장 완료!")
+    else:
+        print("⏭️ 저장할 새 기사 없음")
 
     print(f"⏱️ 총 소요 시간: {int(time.time() - start)}초")
 
